@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>노트</title>
+<style>
+body{margin:0;background:#faf8f5;color:#1f1d1a;font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh}
+.box{max-width:420px;width:calc(100% - 40px);background:#fff;border:1px solid #e8e2da;border-radius:14px;padding:22px;box-shadow:0 6px 20px rgba(60,40,30,.06)}
+h1{font-size:16px;margin:0 0 8px}
+p{font-size:13.5px;color:#6f6a63;margin:0 0 12px;line-height:1.5}
+input{width:100%;box-sizing:border-box;border:1px solid #e8e2da;border-radius:10px;padding:10px 12px;font-size:14px}
+button{margin-top:10px;border:0;background:#b5495b;color:#fff;border-radius:10px;padding:10px 14px;font-size:14px;font-weight:600;cursor:pointer}
+.err{color:#b5495b;font-size:13px;margin-top:8px}
+</style>
+</head>
+<body>
+<div class="box" id="box">
+  <h1>잠깐만요</h1>
+  <p id="msg">불러오는 중…</p>
+  <div id="form" style="display:none">
+    <input id="key" placeholder="받은 링크 전체나 # 뒤의 글자를 붙여넣기">
+    <button id="go">열기</button>
+    <div class="err" id="err"></div>
+  </div>
+</div>
+<script>
+(async function(){
+  const $=id=>document.getElementById(id);
+  const b64=s=>{ s=s.replace(/-/g,'+').replace(/_/g,'/'); while(s.length%4) s+='='; return Uint8Array.from(atob(s),c=>c.charCodeAt(0)); };
+  function showForm(err){ $('msg').textContent='이 페이지는 링크에 포함된 열쇠로만 열려요.'; $('form').style.display='block'; $('err').textContent=err||''; }
+  async function open(secret){
+    try{
+      $('msg').textContent='여는 중…';
+      const res=await fetch('site.enc',{cache:'no-store'}); if(!res.ok) throw new Error('파일을 못 불러왔어요');
+      const buf=new Uint8Array(await res.arrayBuffer());
+      if(String.fromCharCode(...buf.slice(0,4))!=='WNB1') throw new Error('형식이 다릅니다');
+      const salt=buf.slice(4,20), iv=buf.slice(20,32), ct=buf.slice(32);
+      const enc=new TextEncoder();
+      const base=await crypto.subtle.importKey('raw',enc.encode(secret),'HKDF',false,['deriveKey']);
+      const key=await crypto.subtle.deriveKey({name:'HKDF',salt,info:enc.encode('wnb1'),hash:'SHA-256'},base,{name:'AES-GCM',length:256},false,['decrypt']);
+      const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv},key,ct);
+      const html=new TextDecoder().decode(pt);
+      if(location.hash.slice(1)!==secret) history.replaceState(null,'',location.pathname+location.search+'#'+secret);
+      document.open(); document.write(html); document.close();
+    }catch(e){ showForm('열쇠가 맞지 않아요. 링크를 다시 확인해 주세요.'); }
+  }
+  $('go').onclick=()=>{ let v=$('key').value.trim(); const i=v.indexOf('#'); if(i>=0) v=v.slice(i+1); if(!v){ $('err').textContent='값을 넣어 주세요'; return; } open(v); };
+  $('key').addEventListener('keydown',e=>{ if(e.key==='Enter') $('go').click(); });
+  const frag=location.hash.slice(1);
+  if(!crypto||!crypto.subtle){ $('msg').textContent='이 브라우저에서는 열 수 없어요 (https 필요).'; return; }
+  if(frag && frag.length>=16) open(frag); else showForm('');
+})();
+</script>
+</body>
+</html>
